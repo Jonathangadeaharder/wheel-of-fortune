@@ -60,7 +60,7 @@
 .main-content {
   flex: 1;
   padding: 4px;
-  overflow: hidden;
+  overflow: auto;
   background: var(--bg-color-gradient);
   height: calc(100vh - 60px);
   display: flex;
@@ -80,6 +80,10 @@
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 @media (min-width: 1200px) {
@@ -288,9 +292,9 @@
   display: grid;
   grid-template-columns: 1fr;
   gap: 0.25rem;
-  height: calc(100vh - 17.5rem);
-  overflow: hidden;
-  min-height: 0;
+  flex: 1;
+  min-height: 300px;
+  overflow: visible;
 }
 
 .inventory-section {
@@ -298,7 +302,7 @@
   border-radius: 0.5rem;
   padding: 0.75rem;
   box-shadow: var(--shadow);
-  height: 100%;
+  flex: 1;
   overflow: hidden;
   display: flex;
   flex-direction: column;
