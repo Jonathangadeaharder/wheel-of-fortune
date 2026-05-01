@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Limpiar Storage</title>
+</head>
+<body>
+    <h1>Limpiando localStorage...</h1>
+    <script>
+        localStorage.clear();
+        document.body.innerHTML = '<h1>✅ Storage limpiado! Recargando en 2 segundos...</h1>';
+        setTimeout(() => {
+            window.location.href = 'http://localhost:3000';
+        }, 2000);
+    </script>
+</body>
+</html>

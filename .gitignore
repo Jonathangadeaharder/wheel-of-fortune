@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Production build
+build/
+dist/
+
+# Database (contains runtime state)
+data.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
