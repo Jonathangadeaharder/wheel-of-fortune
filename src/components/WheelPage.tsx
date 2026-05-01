@@ -1,20 +1,26 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Trophy } from 'lucide-react';
+import type { Prize } from '../types';
 
-const WheelPage = ({ prizes, updatePrizes }) => {
+interface WheelPageProps {
+  prizes: Prize[];
+  updatePrizes: (prizes: Prize[]) => Promise<void>;
+}
+
+const WheelPage = ({ prizes, updatePrizes }: WheelPageProps) => {
   const [isSpinning, setIsSpinning] = useState(false);
   const [rotation, setRotation] = useState(0);
-  const [selectedPrize, setSelectedPrize] = useState(null);
+  const [selectedPrize, setSelectedPrize] = useState<Prize | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
+  const wheelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const checkUnlock = async () => {
       try {
         const response = await fetch('/api/data');
         const data = await response.json();
-        console.log('Wheel unlock status from server:', data.wheelUnlocked);
         setIsUnlocked(data.wheelUnlocked || false);
       } catch (error) {
         console.error('Error checking unlock status:', error);
@@ -22,20 +28,15 @@ const WheelPage = ({ prizes, updatePrizes }) => {
     };
 
     checkUnlock();
-    // Check every second for unlock status changes from server
     const interval = setInterval(checkUnlock, 1000);
     return () => clearInterval(interval);
   }, []);
-  const wheelRef = useRef(null);
 
-  // Expand prizes based on wheelCount to create multiple segments
-  // NO shuffle - keep visual and internal arrays in sync
   const availablePrizes = prizes
-    .filter(prize => (prize.isLosePrize || prize.quantity > 0) && prize.active !== false)
-    .flatMap(prize => Array(prize.wheelCount || 1).fill(prize));
+    .filter(prize => (prize.isLosePrize || (prize.quantity ?? 0) > 0) && prize.active !== false)
+    .flatMap(prize => Array(prize.wheelCount || 1).fill(prize)) as Prize[];
 
   const spinWheel = async () => {
-    console.log('Spin button clicked. isSpinning:', isSpinning, 'availablePrizes:', availablePrizes.length, 'isUnlocked:', isUnlocked);
     if (isSpinning || availablePrizes.length === 0 || !isUnlocked) return;
 
     setIsSpinning(true);
@@ -43,7 +44,6 @@ const WheelPage = ({ prizes, updatePrizes }) => {
     setShowResult(false);
     setSelectedPrize(null);
 
-    // Simulate processing time for better UX
     await new Promise(resolve => setTimeout(resolve, 100));
 
     const spins = Math.floor(Math.random() * 5) + 5;
@@ -54,8 +54,9 @@ const WheelPage = ({ prizes, updatePrizes }) => {
       const total = weights.reduce((a, b) => a + b, 0);
       let r = Math.random() * total;
       for (let i = 0; i < weights.length; i++) {
-        if (r < weights[i]) { randomIndex = i; break; }
-        r -= weights[i];
+        const w = weights[i];
+        if (w !== undefined && r < w) { randomIndex = i; break; }
+        r -= w ?? 0;
       }
     }
     const selectedCenter = randomIndex * segmentAngle + segmentAngle / 2;
@@ -67,22 +68,21 @@ const WheelPage = ({ prizes, updatePrizes }) => {
 
     setTimeout(async () => {
       const wonPrize = availablePrizes[randomIndex];
+      if (!wonPrize) return;
 
-      // Immediately decrement stock (but not for lose prize)
       const updatedPrizes = prizes.map(prize => {
         if (prize.id === wonPrize.id && !prize.isLosePrize) {
-          return { ...prize, quantity: Math.max(0, prize.quantity - 1) };
+          return { ...prize, quantity: Math.max(0, (prize.quantity ?? 0) - 1) };
         }
         return prize;
       });
-      updatePrizes(updatedPrizes);
+      await updatePrizes(updatedPrizes);
 
       setSelectedPrize(wonPrize);
       setShowResult(true);
       setIsSpinning(false);
       setIsLoading(false);
 
-      // Auto-lock after spin on server
       try {
         await fetch('/api/lock-wheel', { method: 'POST' });
         setIsUnlocked(false);
@@ -90,7 +90,6 @@ const WheelPage = ({ prizes, updatePrizes }) => {
         console.error('Error locking wheel:', error);
       }
 
-      // Save as processed spin (not pending)
       const spinRecord = {
         id: Date.now(),
         prize: wonPrize,
@@ -98,7 +97,6 @@ const WheelPage = ({ prizes, updatePrizes }) => {
         status: 'processed'
       };
 
-      // Fetch existing requests from server and save updated list
       (async () => {
         try {
           const response = await fetch('/api/data');
@@ -114,18 +112,19 @@ const WheelPage = ({ prizes, updatePrizes }) => {
         } catch (error) {
           console.error('Error saving spin request:', error);
         }
-      })()
+      })();
     }, 4000);
   };
 
-  const getSegmentColor = (index) => {
+  const getSegmentColor = (index: number): string => {
     const colors = [
       '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16',
       '#22c55e', '#10b981', '#14b8a6', '#06b6d4', '#0ea5e9',
       '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef',
       '#ec4899', '#f43f5e', '#fb923c', '#fbbf24', '#facc15'
     ];
-    return colors[index % colors.length];
+    const color = colors[index % colors.length];
+    return color ?? '#6b7280';
   };
 
   const renderWheel = () => {
@@ -146,7 +145,7 @@ const WheelPage = ({ prizes, updatePrizes }) => {
     const centerX = radius;
     const centerY = radius;
 
-    const createPath = (index) => {
+    const createPath = (index: number): string => {
       const startAngle = (index * segmentAngle * Math.PI) / 180;
       const endAngle = ((index + 1) * segmentAngle * Math.PI) / 180;
       
@@ -158,25 +157,21 @@ const WheelPage = ({ prizes, updatePrizes }) => {
       return `M ${centerX} ${centerY} L ${x1} ${y1} A ${radius} ${radius} 0 0 1 ${x2} ${y2} Z`;
     };
 
-    const getTextPosition = (index) => {
-      // Calculate the middle angle of this segment
+    const getTextPosition = (index: number) => {
       const segmentMiddleAngle = index * segmentAngle + segmentAngle / 2;
       const angleInRadians = (segmentMiddleAngle * Math.PI) / 180;
 
-      // Position text at 70% of radius from center
       const textRadius = radius * 0.70;
       const x = centerX + textRadius * Math.cos(angleInRadians);
       const y = centerY + textRadius * Math.sin(angleInRadians);
 
-      // Text rotation: align radially (vertical within slice, pointing outward from center)
-      let rotation = segmentMiddleAngle;
+      let textRotation = segmentMiddleAngle;
 
-      // Flip text if it would be upside down (between 90 and 270 degrees)
-      if (rotation > 90 && rotation < 270) {
-        rotation += 180;
+      if (textRotation > 90 && textRotation < 270) {
+        textRotation += 180;
       }
 
-      return { x, y, rotation };
+      return { x, y, rotation: textRotation };
     };
 
     return (
@@ -187,14 +182,13 @@ const WheelPage = ({ prizes, updatePrizes }) => {
       >
         <svg width="100%" height="100%" viewBox="0 0 700 700" style={{ display: 'block' }}>
           {availablePrizes.map((prize, index) => (
-            <g key={prize.id}>
+            <g key={`${prize.id}-${index}`}>
               <path
                 d={createPath(index)}
                 fill={getSegmentColor(index)}
                 stroke="white"
                 strokeWidth="2"
               />
-              {/* Background for better text visibility */}
               <path
                 d={createPath(index)}
                 fill="rgba(0,0,0,0.15)"
@@ -253,11 +247,10 @@ const WheelPage = ({ prizes, updatePrizes }) => {
         disabled={isSpinning || availablePrizes.length === 0 || !isUnlocked}
         aria-label={isSpinning ? 'Girando la rueda' : 'Girar la rueda'}
       >
-        {isSpinning && <div className="loading-spinner" aria-hidden="true"></div>}
+        {isLoading && <div className="loading-spinner" aria-hidden="true"></div>}
         {isSpinning ? 'Girando...' : !isUnlocked ? '🔒 Rueda Bloqueada' : '¡Girar la Rueda!'}
       </button>
 
-      {/* Debug info */}
       {!isUnlocked && (
         <div style={{ textAlign: 'center', color: 'white', marginTop: '1rem', fontSize: '0.875rem' }}>
           La rueda está bloqueada. Espera a que el administrador la desbloquee.
@@ -274,7 +267,7 @@ const WheelPage = ({ prizes, updatePrizes }) => {
                   <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1f2937', marginBottom: '16px' }}>
                     ¡Qué lástima!
                   </h2>
-                  <p style={{ fontSize: '32px', fontWeight: '800', color: '#374151', marginBottom: '24px' }}>
+                  <p style={{ fontSize: '32px', fontWeight: 800, color: '#374151', marginBottom: '24px' }}>
                     {selectedPrize.name}
                   </p>
                   <p style={{ fontSize: '16px', color: '#6b7280', marginBottom: '24px' }}>
@@ -287,7 +280,7 @@ const WheelPage = ({ prizes, updatePrizes }) => {
                   <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1f2937', marginBottom: '16px' }}>
                     ¡Felicitaciones!
                   </h2>
-                  <p style={{ fontSize: '32px', fontWeight: '800', color: '#374151', marginBottom: '24px' }}>
+                  <p style={{ fontSize: '32px', fontWeight: 800, color: '#374151', marginBottom: '24px' }}>
                     {selectedPrize.name}
                   </p>
                 </>

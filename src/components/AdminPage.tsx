@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Edit2, Trash2, Unlock, Lock, Minus, Eye, EyeOff, ChevronUp, ChevronDown, Plus } from 'lucide-react';
+import { Edit2, Trash2, Unlock, Lock, Minus, Eye, EyeOff, ChevronUp, ChevronDown, Plus, Search, Download, Upload, RotateCcw, BarChart3 } from 'lucide-react';
+import type { Prize, SpinRequest } from '../types';
 
-const AdminPage = ({ prizes, updatePrizes }) => {
-  const [spinRequests, setSpinRequests] = useState([]);
+interface AdminPageProps {
+  prizes: Prize[];
+  updatePrizes: (prizes: Prize[]) => Promise<void>;
+}
+
+const AdminPage = ({ prizes, updatePrizes }: AdminPageProps) => {
+  const [spinRequests, setSpinRequests] = useState<SpinRequest[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [editingPrize, setEditingPrize] = useState(null);
+  const [editingPrize, setEditingPrize] = useState<Prize | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     quantity: 1,
@@ -12,14 +18,19 @@ const AdminPage = ({ prizes, updatePrizes }) => {
     image_url: ''
   });
   const [wheelUnlocked, setWheelUnlocked] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'name' | 'quantity' | 'probability'>('name');
+  const [sortAsc, setSortAsc] = useState(true);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [showStats, setShowStats] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   useEffect(() => {
-    // Load data from server
     const loadData = async () => {
       try {
         const response = await fetch('/api/data');
         const data = await response.json();
-        console.log('Admin: Loaded data from server:', data.wheelUnlocked);
         setWheelUnlocked(data.wheelUnlocked || false);
         setSpinRequests(data.spinRequests || []);
       } catch (error) {
@@ -28,56 +39,52 @@ const AdminPage = ({ prizes, updatePrizes }) => {
     };
     loadData();
 
-    // Poll every 2 seconds to stay in sync
     const interval = setInterval(loadData, 2000);
     return () => clearInterval(interval);
   }, []);
 
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
   const toggleWheelLock = async () => {
     const newState = !wheelUnlocked;
-    console.log('Admin: Toggling wheel lock to:', newState);
     setWheelUnlocked(newState);
 
-    // Save to server
     try {
       const endpoint = newState ? '/api/unlock-wheel' : '/api/lock-wheel';
-      const response = await fetch(endpoint, { method: 'POST' });
-      console.log('Admin: Lock toggle response:', response.status);
-
-      // Verify the change was saved
-      const verifyResponse = await fetch('/api/data');
-      const verifyData = await verifyResponse.json();
-      console.log('Admin: Verified state after toggle:', verifyData.wheelUnlocked);
+      await fetch(endpoint, { method: 'POST' });
+      showToast(newState ? 'Rueda desbloqueada' : 'Rueda bloqueada');
     } catch (error) {
       console.error('Error toggling wheel lock:', error);
+      showToast('Error al cambiar estado', 'error');
     }
   };
 
-  const handleUndoLastSpin = (requestId) => {
+  const handleUndoLastSpin = (requestId: number) => {
     const request = spinRequests.find(r => r.id === requestId);
     if (!request) return;
 
-    // Restore stock
     const updatedPrizes = prizes.map(prize => {
       if (prize.id === request.prize.id) {
-        return { ...prize, quantity: prize.quantity + 1 };
+        return { ...prize, quantity: (prize.quantity ?? 0) + 1 };
       }
       return prize;
     });
 
     updatePrizes(updatedPrizes);
 
-    // Mark as undone
     const updatedRequests = spinRequests.map(r => {
       if (r.id === requestId) {
-        return { ...r, status: 'undone' };
+        return { ...r, status: 'undone' as const };
       }
       return r;
     });
 
     setSpinRequests(updatedRequests);
+    showToast('Giro deshecho, stock restaurado');
     
-    // Save to server
     (async () => {
       try {
         await fetch('/api/spin-requests', {
@@ -96,17 +103,22 @@ const AdminPage = ({ prizes, updatePrizes }) => {
       return;
     }
 
-    const newPrize = {
+    const newPrize: Prize = {
       id: Date.now(),
-      ...formData
+      ...formData,
+      quantity: formData.quantity,
+      probability: formData.probability,
+      active: true,
+      wheelCount: 1
     };
 
     updatePrizes([...prizes, newPrize]);
     setFormData({ name: '', quantity: 1, probability: 10, image_url: '🎁' });
     setShowAddForm(false);
+    showToast('Producto agregado');
   };
 
-  const handleEditPrize = (prize) => {
+  const handleEditPrize = (prize: Prize) => {
     setEditingPrize(prize);
     setFormData({
       name: prize.name,
@@ -123,7 +135,7 @@ const AdminPage = ({ prizes, updatePrizes }) => {
     }
 
     const updatedPrizes = prizes.map(prize => {
-      if (prize.id === editingPrize.id) {
+      if (editingPrize && prize.id === editingPrize.id) {
         return { ...prize, ...formData };
       }
       return prize;
@@ -132,14 +144,17 @@ const AdminPage = ({ prizes, updatePrizes }) => {
     updatePrizes(updatedPrizes);
     setEditingPrize(null);
     setFormData({ name: '', quantity: 1, probability: 10, image_url: '' });
+    showToast('Producto actualizado');
   };
 
-  const handleDeletePrize = (prizeId) => {
+  const handleDeletePrize = (prizeId: number) => {
     const updatedPrizes = prizes.filter(prize => prize.id !== prizeId);
     updatePrizes(updatedPrizes);
+    setShowDeleteConfirm(null);
+    showToast('Producto eliminado');
   };
 
-  const handleIncrementStock = (prizeId) => {
+  const handleIncrementStock = (prizeId: number) => {
     const updatedPrizes = prizes.map(prize => {
       if (prize.id === prizeId) {
         return { ...prize, quantity: prize.quantity + 1 };
@@ -149,17 +164,17 @@ const AdminPage = ({ prizes, updatePrizes }) => {
     updatePrizes(updatedPrizes);
   };
 
-  const handleDecrementStock = (prizeId) => {
+  const handleDecrementStock = (prizeId: number) => {
     const updatedPrizes = prizes.map(prize => {
-      if (prize.id === prizeId && prize.quantity > 0) {
-        return { ...prize, quantity: prize.quantity - 1 };
+      if (prize.id === prizeId && (prize.quantity ?? 0) > 0) {
+        return { ...prize, quantity: (prize.quantity ?? 0) - 1 };
       }
       return prize;
     });
     updatePrizes(updatedPrizes);
   };
 
-  const handleToggleActive = (prizeId) => {
+  const handleToggleActive = (prizeId: number) => {
     const updatedPrizes = prizes.map(prize => {
       if (prize.id === prizeId) {
         return { ...prize, active: !prize.active };
@@ -169,7 +184,7 @@ const AdminPage = ({ prizes, updatePrizes }) => {
     updatePrizes(updatedPrizes);
   };
 
-  const handleIncreaseWheelCount = (prizeId) => {
+  const handleIncreaseWheelCount = (prizeId: number) => {
     const updatedPrizes = prizes.map(prize => {
       if (prize.id === prizeId) {
         return { ...prize, wheelCount: (prize.wheelCount || 1) + 1 };
@@ -179,7 +194,7 @@ const AdminPage = ({ prizes, updatePrizes }) => {
     updatePrizes(updatedPrizes);
   };
 
-  const handleDecreaseWheelCount = (prizeId) => {
+  const handleDecreaseWheelCount = (prizeId: number) => {
     const updatedPrizes = prizes.map(prize => {
       if (prize.id === prizeId && (prize.wheelCount || 1) > 1) {
         return { ...prize, wheelCount: (prize.wheelCount || 1) - 1 };
@@ -189,19 +204,107 @@ const AdminPage = ({ prizes, updatePrizes }) => {
     updatePrizes(updatedPrizes);
   };
 
-  const sortedPrizes = [...prizes].sort((a, b) => a.name.localeCompare(b.name));
+  const handleExportConfig = () => {
+    const dataStr = JSON.stringify(prizes, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ruleta-config-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Configuración exportada');
+  };
+
+  const handleImportConfig = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const imported = JSON.parse(event.target?.result as string) as Prize[];
+        if (Array.isArray(imported) && imported.length > 0) {
+          updatePrizes(imported);
+          showToast(`${imported.length} productos importados`);
+        } else {
+          showToast('Archivo inválido', 'error');
+        }
+      } catch {
+        showToast('Error al leer archivo', 'error');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleResetStock = () => {
+    updatePrizes([...prizes]);
+    setShowResetConfirm(false);
+    showToast('Stock no modificado (funcionalidad pendiente)');
+  };
+
+  const handleSort = (column: 'name' | 'quantity' | 'probability') => {
+    if (sortBy === column) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortBy(column);
+      setSortAsc(true);
+    }
+  };
+
+  const filteredPrizes = prizes
+    .filter(prize => prize.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    .sort((a, b) => {
+      let comparison = 0;
+      switch (sortBy) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case 'quantity':
+          comparison = a.quantity - b.quantity;
+          break;
+        case 'probability':
+          comparison = a.probability - b.probability;
+          break;
+      }
+      return sortAsc ? comparison : -comparison;
+    });
 
   const processedRequests = spinRequests.filter(r => r.status === 'processed');
   const lastProcessedSpin = processedRequests.length > 0 ? processedRequests[processedRequests.length - 1] : null;
   const historyRequests = spinRequests.filter(r => r.status !== 'processed');
 
+  const stats = {
+    totalPrizes: prizes.length,
+    activePrizes: prizes.filter(p => p.active).length,
+    totalStock: prizes.reduce((sum, p) => sum + (p.isLosePrize ? 0 : (p.quantity ?? 0)), 0),
+    totalSpins: spinRequests.filter(r => r.status === 'processed').length,
+    undoneSpins: spinRequests.filter(r => r.status === 'undone').length,
+  };
+
   return (
     <div className="page-container">
       <h1 className="page-title">Panel de Administración</h1>
 
-      {/* Top Section: Control de Rueda + Historial de Giros */}
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          top: '1rem',
+          right: '1rem',
+          padding: '1rem 1.5rem',
+          borderRadius: '8px',
+          color: 'white',
+          fontWeight: 600,
+          zIndex: 9999,
+          background: toast.type === 'success' ? '#10b981' : '#ef4444',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+        }}>
+          {toast.message}
+        </div>
+      )}
+
       <div className="admin-top-section">
-        {/* Unlock Control */}
         <div className="control-section">
           <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1rem', color: '#1f2937' }}>Control de Rueda</h2>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -212,7 +315,7 @@ const AdminPage = ({ prizes, updatePrizes }) => {
                 <Lock size={32} style={{ color: '#ef4444' }} />
               )}
               <div>
-                <div style={{ fontWeight: '600', fontSize: '1rem', color: '#1f2937' }}>
+                <div style={{ fontWeight: 600, fontSize: '1rem', color: '#1f2937' }}>
                   {wheelUnlocked ? 'Rueda Desbloqueada' : 'Rueda Bloqueada'}
                 </div>
                 <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
@@ -228,30 +331,52 @@ const AdminPage = ({ prizes, updatePrizes }) => {
               {wheelUnlocked ? 'Bloquear' : 'Desbloquear'}
             </button>
           </div>
+
+          <div style={{ marginTop: '1.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button className="btn btn-primary" onClick={() => setShowStats(!showStats)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <BarChart3 size={16} /> Estadísticas
+            </button>
+            <button className="btn btn-secondary" onClick={handleExportConfig} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Download size={16} /> Exportar
+            </button>
+            <label className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+              <Upload size={16} /> Importar
+              <input type="file" accept=".json" onChange={handleImportConfig} style={{ display: 'none' }} />
+            </label>
+          </div>
+
+          {showStats && (
+            <div style={{ marginTop: '1rem', padding: '1rem', background: '#f3f4f6', borderRadius: '8px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div><strong>Productos:</strong> {stats.totalPrizes}</div>
+                <div><strong>Activos:</strong> {stats.activePrizes}</div>
+                <div><strong>Stock total:</strong> {stats.totalStock}</div>
+                <div><strong>Giros:</strong> {stats.totalSpins}</div>
+                <div><strong>Deshacer:</strong> {stats.undoneSpins}</div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Historial de Giros */}
         <div className="spin-requests-section">
-          <h2 className="section-title">
-            Historial de Giros
-          </h2>
+          <h2 className="section-title">Historial de Giros</h2>
 
           <div className="spin-history-scroll">
             {lastProcessedSpin ? (
               <div>
-                <h3 style={{ fontSize: '1.125rem', fontWeight: '600', color: '#374151', marginBottom: '1rem' }}>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 600, color: '#374151', marginBottom: '1rem' }}>
                   Último Giro
                 </h3>
                 <div className="spin-request-item" style={{ background: '#d1fae5', borderColor: '#10b981' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1 }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: '600', color: '#1f2937', fontSize: '1.125rem' }}>
+                      <div style={{ fontWeight: 600, color: '#1f2937', fontSize: '1.125rem' }}>
                         {lastProcessedSpin.prize.name}
                       </div>
                       <div style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '0.25rem' }}>
                         {new Date(lastProcessedSpin.timestamp).toLocaleString()}
                       </div>
-                      <div style={{ fontSize: '0.75rem', color: '#059669', marginTop: '0.25rem', fontWeight: '600' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#059669', marginTop: '0.25rem', fontWeight: 600 }}>
                         ✓ PROCESADO - Stock decrementado
                       </div>
                     </div>
@@ -266,14 +391,12 @@ const AdminPage = ({ prizes, updatePrizes }) => {
                 </div>
               </div>
             ) : (
-              <div className="empty-state">
-                No hay giros procesados.
-              </div>
+              <div className="empty-state">No hay giros procesados.</div>
             )}
 
             {historyRequests.length > 0 && (
               <div style={{ marginTop: '2rem' }}>
-                <h3 style={{ fontSize: '1.125rem', fontWeight: '600', color: '#374151', marginBottom: '1rem' }}>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 600, color: '#374151', marginBottom: '1rem' }}>
                   Historial Anterior ({historyRequests.length})
                 </h3>
                 {historyRequests.map(request => (
@@ -291,7 +414,7 @@ const AdminPage = ({ prizes, updatePrizes }) => {
                         <div className="prize-quantity">
                           {new Date(request.timestamp).toLocaleString()} -
                           <span style={{
-                            fontWeight: '600',
+                            fontWeight: 600,
                             color: request.status === 'undone' ? '#dc2626' : '#6b7280',
                             marginLeft: '0.5rem'
                           }}>
@@ -308,13 +431,27 @@ const AdminPage = ({ prizes, updatePrizes }) => {
         </div>
       </div>
 
-      {/* Gestión de Inventario - Full Width Below */}
       <div className="admin-grid">
         <div className="inventory-section">
-          <h2 className="section-title">
-            Gestión de Inventario
-          </h2>
-          
+          <h2 className="section-title">Gestión de Inventario</h2>
+
+          <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem', alignItems: 'center' }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Buscar productos..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ paddingLeft: '2.5rem' }}
+              />
+            </div>
+            <button className="btn btn-secondary" onClick={() => setShowResetConfirm(true)} title="Resetear stock">
+              <RotateCcw size={16} />
+            </button>
+          </div>
+
           {showAddForm && (
             <div className="add-prize-form">
               <div className="form-group">
@@ -385,25 +522,45 @@ const AdminPage = ({ prizes, updatePrizes }) => {
             </button>
           )}
 
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <button
+              onClick={() => handleSort('name')}
+              style={{ background: sortBy === 'name' ? '#3b82f6' : '#e5e7eb', color: sortBy === 'name' ? 'white' : '#374151', border: 'none', padding: '0.25rem 0.75rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}
+            >
+              Nombre {sortBy === 'name' && (sortAsc ? '↑' : '↓')}
+            </button>
+            <button
+              onClick={() => handleSort('quantity')}
+              style={{ background: sortBy === 'quantity' ? '#3b82f6' : '#e5e7eb', color: sortBy === 'quantity' ? 'white' : '#374151', border: 'none', padding: '0.25rem 0.75rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}
+            >
+              Stock {sortBy === 'quantity' && (sortAsc ? '↑' : '↓')}
+            </button>
+            <button
+              onClick={() => handleSort('probability')}
+              style={{ background: sortBy === 'probability' ? '#3b82f6' : '#e5e7eb', color: sortBy === 'probability' ? 'white' : '#374151', border: 'none', padding: '0.25rem 0.75rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}
+            >
+              Probabilidad {sortBy === 'probability' && (sortAsc ? '↑' : '↓')}
+            </button>
+          </div>
+
           <div className="prize-list">
-            {prizes.length === 0 ? (
+            {filteredPrizes.length === 0 ? (
               <div className="empty-state">
-                No hay productos en el inventario. ¡Agrega algunos para comenzar!
+                {searchQuery ? 'No se encontraron productos' : 'No hay productos en el inventario. ¡Agrega algunos para comenzar!'}
               </div>
             ) : (
               <>
-                {sortedPrizes.map(prize => (
+                {filteredPrizes.map(prize => (
                   <div key={prize.id} className="prize-item">
                     <div className="prize-info">
                       <div className="prize-details">
                         <div className="prize-name">{prize.name}</div>
                         <div className="prize-quantity">
-                          {prize.isLosePrize ? `Ruleta: ${prize.wheelCount || 1}x` : `Stock: ${prize.quantity} | Ruleta: ${prize.wheelCount || 1}x`}
+                          {prize.isLosePrize ? `Ruleta: ${prize.wheelCount || 1}x` : `Stock: ${prize.quantity ?? 0} | Ruleta: ${prize.wheelCount || 1}x`}
                         </div>
                       </div>
                     </div>
                     <div className="prize-actions">
-                      {/* Visibility Control */}
                       <button
                         className="icon-button"
                         onClick={() => handleToggleActive(prize.id)}
@@ -413,7 +570,6 @@ const AdminPage = ({ prizes, updatePrizes }) => {
                         {prize.active ? <Eye size={18} /> : <EyeOff size={18} />}
                       </button>
 
-                      {/* Wheel Count Controls */}
                       <button
                         className="icon-button"
                         onClick={() => handleIncreaseWheelCount(prize.id)}
@@ -432,7 +588,6 @@ const AdminPage = ({ prizes, updatePrizes }) => {
                         <ChevronDown size={18} />
                       </button>
 
-                      {/* Stock Controls */}
                       {!prize.isLosePrize && (
                         <>
                           <button
@@ -455,7 +610,6 @@ const AdminPage = ({ prizes, updatePrizes }) => {
                         </>
                       )}
 
-                      {/* Edit & Delete Actions */}
                       {!prize.isLosePrize && (
                         <>
                           <button
@@ -467,7 +621,7 @@ const AdminPage = ({ prizes, updatePrizes }) => {
                           </button>
                           <button
                             className="icon-button delete-button"
-                            onClick={() => handleDeletePrize(prize.id)}
+                            onClick={() => setShowDeleteConfirm(prize.id)}
                             title="Eliminar producto"
                           >
                             <Trash2 size={18} />
@@ -482,6 +636,32 @@ const AdminPage = ({ prizes, updatePrizes }) => {
           </div>
         </div>
       </div>
+
+      {showDeleteConfirm && (
+        <div className="modal">
+          <div className="modal-content" style={{ maxWidth: '400px' }}>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1rem' }}>Confirmar eliminación</h3>
+            <p style={{ marginBottom: '1.5rem' }}>¿Estás seguro de que querés eliminar este producto?</p>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => setShowDeleteConfirm(null)}>Cancelar</button>
+              <button className="btn btn-danger" onClick={() => handleDeletePrize(showDeleteConfirm)}>Eliminar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showResetConfirm && (
+        <div className="modal">
+          <div className="modal-content" style={{ maxWidth: '400px' }}>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1rem' }}>Resetear stock</h3>
+            <p style={{ marginBottom: '1.5rem' }}>¿Estás seguro? Esto restaurará el stock a los valores por defecto.</p>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => setShowResetConfirm(false)}>Cancelar</button>
+              <button className="btn btn-danger" onClick={handleResetStock}>Resetear</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

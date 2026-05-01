@@ -12,20 +12,44 @@
     "react-router-dom": "^6.28.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.59.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.6.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@typescript-eslint/eslint-plugin": "^8.59.1",
+    "@typescript-eslint/parser": "^8.59.1",
     "@vitejs/plugin-react": "^4.3.3",
+    "@vitest/coverage-v8": "^2.1.9",
     "concurrently": "^9.2.1",
-    "vite": "^5.4.10"
+    "eslint": "^9.39.4",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "jsdom": "^29.1.1",
+    "typescript": "^6.0.3",
+    "vite": "^5.4.10",
+    "vitest": "^2.1.9"
   },
   "scripts": {
     "prestart": "lsof -ti:3001 | xargs -r kill -9 2>/dev/null || true; lsof -ti:5173 | xargs -r kill -9 2>/dev/null || true",
-    "start": "concurrently \"node server.js\" \"vite\" --names \"backend,frontend\" --prefix-colors \"cyan,magenta\"",
+    "start": "concurrently \"npx tsx server.ts\" \"vite\" --names \"backend,frontend\" --prefix-colors \"cyan,magenta\"",
     "build": "vite build",
     "preview": "vite preview",
-    "server": "node server.js",
+    "server": "npx tsx server.ts",
     "frontend": "vite",
-    "build-and-serve": "npm run build && npm run server"
+    "build-and-serve": "pnpm run build && pnpm run server",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "npx playwright test",
+    "test:e2e:ui": "npx playwright test --ui",
+    "deploy": "pnpm run build && sudo systemctl restart wheel-of-fortune"
   },
   "eslintConfig": {
     "extends": [
